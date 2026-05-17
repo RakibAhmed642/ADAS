@@ -1,0 +1,20 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# PyTorch / YOLO Model Weights (Avoid pushing massive binaries >100MB to GitHub)
+*.pt
+
+# Local log files and temporary debug captures
+err.txt
+debug_frame.jpg
+
+# OS-generated files
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# IDEs and Editors
+.vscode/
+.idea/
