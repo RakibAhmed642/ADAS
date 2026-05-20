@@ -121,15 +121,19 @@ graph TD
 ### 3.1 Advanced Pre-Processing & Adaptive Conditioning
 To maintain extreme accuracy across variable lighting, weather, and particulate conditions, the system runs an **Adaptive Image Conditioner** before object detection:
 1. **Weather Classifier (`analyze_environment`)**:
-   - **Sharpness Evaluation**: Computes the variance of the image Laplacian:
-     $$\sigma^2_{\Delta} = \sum (I(x,y) * \mathbf{L} - \mu_{\Delta})^2$$
-     Values below $60$ flag heavy fog; values below $120$ flag rain.
-   - **Sky HSV Analysis**: Segments the top $30\%$ of the frame. Under standard daylight, high value ($V > 150$) and high saturation ($S > 30$) classify as `SUNNY` (dry asphalt friction $\mu = 0.8$), while low saturation classifies as `CLOUDY`.
+    - **Sharpness Evaluation**: Computes the variance of the image Laplacian:
+      $$
+      \sigma^2_{\Delta} = \frac{1}{N} \sum_{x,y} \left( (I * \mathbf{L})(x,y) - \mu_{\Delta} \right)^2
+      $$
+      Values below 60 flag heavy fog; values below 120 flag rain.
+    - **Sky HSV Analysis**: Segments the top 30% of the frame. Under standard daylight, high value ($V > 150$) and high saturation ($S > 30$) classify as `SUNNY` (dry asphalt friction $\mu = 0.8$), while low saturation classifies as `CLOUDY`.
 2. **LAB-CLAHE Night Vision Enhancement (`apply_night_vision`)**:
-   If overall frame brightness falls below $70$ on the HSV value channel, the system enters `NIGHT MODE`. It transforms the frame into the **CIE L\*a\*b\*** color space, applies Contrast Limited Adaptive Histogram Equalization (CLAHE) with a clipping limit of $2.0$ over an $8 \times 8$ grid size exclusively to the Lightness ($L$) channel, and merges the result back to BGR. This preserves chromatic components while enhancing low-light structural boundaries.
+   If overall frame brightness falls below 70 on the HSV value channel, the system enters `NIGHT MODE`. It transforms the frame into the **CIE L\*a\*b\*** color space, applies Contrast Limited Adaptive Histogram Equalization (CLAHE) with a clipping limit of $2.0$ over an $8 \times 8$ grid size exclusively to the Lightness ($L$) channel, and merges the result back to BGR. This preserves chromatic components while enhancing low-light structural boundaries.
 3. **Pseudo-Dehaze Filter (`apply_advanced_dehaze_filter`)**:
    Under fog or rain, an unsharp mask filter boosts high-frequency components:
-     $$I_{\text{sharp}} = 1.5 \cdot I_{\text{orig}} - 0.5 \cdot (I_{\text{orig}} * \mathbf{G}_{\sigma=3})$$
+      $$
+      I_{\text{sharp}} = 1.5 \cdot I_{\text{orig}} - 0.5 \cdot (I_{\text{orig}} * \mathbf{G}_{\sigma=3})
+      $$
    It then performs localized histogram equalization to counter particulate scattering.
 
 ---
@@ -162,16 +166,24 @@ graph TD
 #### Mathematical Formulas:
 *   **Geometric Projection (Pinhole Camera model)**:
     Assuming flat road topology, the pitch angle of the camera vector targeting the contact point of the wheels is computed:
-    $$\alpha = \arctan\left(\frac{y_{\text{bottom}} - y_{\text{horizon}}}{f}\right)$$
-    $$d_{\text{geometric}} = \frac{H_{\text{camera}}}{\tan(\alpha)}$$
-    Where $H_{\text{camera}} = 1.5\text{m}$ (height of mounting point) and $f = 800\text{px}$ (focal length).
+    $$
+    \alpha = \arctan\left(\frac{y_{\text{bottom}} - y_{\text{horizon}}}{f}\right)
+    $$
+    $$
+    d_{\text{geometric}} = \frac{H_{\text{camera}}}{\tan(\alpha)}
+    $$
+    Where $H_{\text{camera}} = 1.5 \text{ m}$ (height of mounting point) and $f = 800 \text{ px}$ (focal length).
 *   **Optical Expansion (Known Prior Widths)**:
     Utilizes perspective scale relationships of known class widths:
-    $$d_{\text{optical}} = \frac{W_{\text{real}} \cdot f}{w_{\text{box}}}$$
-    Where priors are: Car = $1.8\text{m}$, Truck = $2.5\text{m}$, Bus = $2.8\text{m}$, Motorcycle = $0.8\text{m}$, Pedestrian = $0.5\text{m}$.
+    $$
+    d_{\text{optical}} = \frac{W_{\text{real}} \cdot f}{w_{\text{box}}}
+    $$
+    Where priors are: Car = $1.8 \text{ m}$, Truck = $2.5 \text{ m}$, Bus = $2.8 \text{ m}$, Motorcycle = $0.8 \text{ m}$, Pedestrian = $0.5 \text{ m}$.
 *   **Weighted Fusion Gating**:
-    If the vehicle base is well below the horizon line ($y_{\text{bottom}} > y_{\text{horizon}} + 20\text{px}$), the models are fused:
-    $$d_{\text{final}} = 0.6 \cdot d_{\text{geometric}} + 0.4 \cdot d_{\text{optical}}$$
+    If the vehicle base is well below the horizon line ($y_{\text{bottom}} > y_{\text{horizon}} + 20 \text{ px}$), the models are fused:
+    $$
+    d_{\text{final}} = 0.6 \cdot d_{\text{geometric}} + 0.4 \cdot d_{\text{optical}}
+    $$
     Otherwise, the geometric model loses vertical resolution near the vanishing point, and the system dynamically drops back to pure $d_{\text{optical}}$.
 
 ---
@@ -181,20 +193,28 @@ To smooth depth measurements and derive higher-order derivatives (velocity, acce
 
 #### 1. State Space Representation
 The state vector $\mathbf{x}$ represents the one-dimensional forward physical model of depth:
-$$\mathbf{x} = \begin{bmatrix} d \\ v \\ a \end{bmatrix} \begin{array}{l} \leftarrow \text{Distance (m)} \\ \leftarrow \text{Velocity (m/s)} \\ \leftarrow \text{Acceleration (m/s}^2\text{)} \end{array}$$
+$$
+\mathbf{x} = \begin{bmatrix} d \\ v \\ a \end{bmatrix} \begin{array}{l} \leftarrow \text{Distance (m)} \\ \leftarrow \text{Velocity (m/s)} \\ \leftarrow \text{Acceleration (m/s}^2\text{)} \end{array}
+$$
 
 #### 2. Process Transition Matrix ($\mathbf{F}$)
 The transition matrix models kinematic progression using a dynamically computed frame step time ($\Delta t$):
-$$\mathbf{F} = \begin{bmatrix} 1 & \Delta t & 0.5\Delta t^2 \\ 0 & 1 & \Delta t \\ 0 & 0 & 1 \end{bmatrix}$$
+$$
+\mathbf{F} = \begin{bmatrix} 1 & \Delta t & 0.5\Delta t^2 \\ 0 & 1 & \Delta t \\ 0 & 0 & 1 \end{bmatrix}
+$$
 
 #### 3. Measurement Matrix ($\mathbf{H}$)
 Only the hybrid monocular distance ($z$) is directly measurable:
-$$\mathbf{H} = \begin{bmatrix} 1 & 0 & 0 \end{bmatrix}$$
+$$
+\mathbf{H} = \begin{bmatrix} 1 & 0 & 0 \end{bmatrix}
+$$
 
 #### 4. Covariance Gating
 *   **Measurement Noise Covariance ($R$)**: Gated at $R = [5]$ to reflect optical pixel jitter.
 *   **Process Noise Covariance ($\mathbf{Q}$)**: Models sudden acceleration jumps:
-    $$\mathbf{Q} = \begin{bmatrix} 1 & 0 & 0 \\ 0 & 1 & 0 \\ 0 & 0 & 5 \end{bmatrix}$$
+    $$
+    \mathbf{Q} = \begin{bmatrix} 1 & 0 & 0 \\ 0 & 1 & 0 \\ 0 & 0 & 5 \end{bmatrix}
+    $$
 *   **Error Covariance ($\mathbf{P}$)**: Initialized at $\mathbf{P} = 100 \cdot \mathbf{I}_{3 \times 3}$.
 
 #### 5. Estimation Loop
@@ -219,18 +239,26 @@ graph LR
 
 ### 3.4 Multi-Tier Threat Triage & Stopping Kinematics
 1. **Time-to-Collision (TTC)**:
-   If an obstacle is approaching (closing speed $V_{\text{close}} = -v > 0.1\text{ m/s}$):
-   $$\text{TTC} = \frac{d}{V_{\text{close}}}$$
+   If an obstacle is approaching (closing speed $V_{\text{close}} = -v > 0.1 \text{ m/s}$):
+   $$
+   \text{TTC} = \frac{d}{V_{\text{close}}}
+   $$
 2. **Gaussian Collision Risk Probability**:
    Computed using a standard normal distribution centered on a collision deviation index ($\sigma = 3.0$ seconds):
-   $$P_{\text{risk}} = \exp\left(-\frac{\text{TTC}^2}{2\sigma^2}\right) \cdot 100$$
+   $$
+   P_{\text{risk}} = \exp\left(-\frac{\text{TTC}^2}{2\sigma^2}\right) \cdot 100
+   $$
 3. **Weather-Aware Friction Stopping Distance**:
    Calculates the required stopping window to avoid collision:
-   $$d_{\text{stopping}} = 1.5 \cdot v_{\text{ego}} + \frac{v_{\text{ego}}^2}{2 \cdot \mu \cdot g}$$
-   Where $\mu$ adapts dynamically based on the pre-processing layer classifications: $0.8$ (Dry/Sunny), $0.5$ (Foggy), $0.4$ (Wet/Rain), and $g = 9.8\text{ m/s}^2$.
+   $$
+   d_{\text{stopping}} = 1.5 \cdot v_{\text{ego}} + \frac{v_{\text{ego}}^2}{2 \cdot \mu \cdot g}
+   $$
+   Where $v_{\text{ego}}$ is the speed of the ego vehicle in meters per second ($\text{m/s}$), and $\mu$ adapts dynamically based on the pre-processing layer classifications: $0.8$ (Dry/Sunny), $0.5$ (Foggy), $0.4$ (Wet/Rain), and $g = 9.8 \text{ m/s}^2$.
 4. **Kinetic Impact Severity**:
    Estimates potential impact energy absorption to prioritize warning reticles:
-   $$\text{Severity} = \frac{0.5 \cdot V_{\text{close}}^2}{100} \quad (\text{if TTC} < 5.0\text{s})$$
+   $$
+   \text{Severity} = \frac{0.5 \cdot V_{\text{close}}^2}{100} \quad (\text{if } \text{TTC} < 5.0 \text{ s})
+   $$
 
 ---
 
@@ -268,7 +296,9 @@ graph TD
 
 #### Time-Series Decision Thresholds:
 *   **Peak-to-Peak (PTP) Amplitude**:
-    $$PTP = \max(\text{hist}) - \min(\text{hist})$$
+    $$
+    PTP = \max(\text{hist}) - \min(\text{hist})
+    $$
     A value of $PTP > 0.015$ indicates turn signal flashing behavior.
 *   **Upper Signal (US) Center High Mount Stop Light**:
     Acts as a deterministic validator for braking. If the $US$ zone shows stable illumination ($mean_{US} > 0.005$) and low variance, it triggers a `BRAKE` status, eliminating glow ambiguity from standard tail lights.
@@ -297,18 +327,28 @@ To create an accurate top-down spatial map, the system maps camera coordinates t
 
 #### Homography Mapping Math:
 1.  **Coordinate Transformation**:
-    The system defines 4 source coplanar road points $\mathbf{P}_s$ in the camera frame and 4 destination points $\mathbf{P}_d$ in the top-down minimap projection canvas ($200 \times 240\text{px}$).
+    The system defines 4 source coplanar road points $\mathbf{P}_s$ in the camera frame and 4 destination points $\mathbf{P}_d$ in the top-down minimap projection canvas ($200 \times 240 \text{ px}$).
     It solves for the $3 \times 3$ Homography Matrix $\mathbf{H}_{\text{bev}}$:
-    $$\mathbf{P}_d = \mathbf{H}_{\text{bev}} \cdot \mathbf{P}_s$$
+    $$
+    \mathbf{P}_d = \mathbf{H}_{\text{bev}} \cdot \mathbf{P}_s
+    $$
     Where:
-    $$\mathbf{H}_{\text{bev}} = \text{cv2.getPerspectiveTransform}(\text{src\_pts}, \text{dst\_pts})$$
+    $$
+    \mathbf{H}_{\text{bev}} = \operatorname{getPerspectiveTransform}(\text{src\_pts}, \text{dst\_pts})
+    $$
 2.  **Obstacle Blip Placement**:
     For any tracked object with central base coordinate $(x_c, y_2)$:
-    $$\begin{bmatrix} x'_d \\ y'_d \\ w'_d \end{bmatrix} = \mathbf{H}_{\text{bev}} \cdot \begin{bmatrix} x_c \\ y_2 \\ 1 \end{bmatrix}$$
-    $$X_{\text{bev}} = \frac{x'_d}{w'_d}$$
+    $$
+    \begin{bmatrix} x'_d \\ y'_d \\ w'_d \end{bmatrix} = \mathbf{H}_{\text{bev}} \cdot \begin{bmatrix} x_c \\ y_2 \\ 1 \end{bmatrix}
+    $$
+    $$
+    X_{\text{bev}} = \frac{x'_d}{w'_d}
+    $$
     To maintain accurate longitudinal scaling over long distances, the system overrides the homographic $Y$ coordinate with its highly stable Kalman-filtered physical distance:
-    $$Y_{\text{bev}} = Y_{\text{origin}} - (d_{\text{Kalman}} \cdot \text{scale})$$
-    Where $\text{scale} = \frac{Y_{\text{origin}}}{100\text{m}}$, allowing accurate top-down spatial tracking up to $100\text{ meters}$.
+    $$
+    Y_{\text{bev}} = Y_{\text{origin}} - (d_{\text{Kalman}} \cdot \text{scale})
+    $$
+    Where $\text{scale} = \frac{Y_{\text{origin}}}{100\text{m}}$, allowing accurate top-down spatial tracking up to 100 meters.
 
 ---
 
@@ -343,7 +383,9 @@ Input Frame (224x224x3)
     Modified ResNet-18 model loaded with ImageNet weights. The final fully connected classification layers are stripped, outputting a dense $512$-channel spatial tensor map.
 *   **ODConv2d (Omni-Dimensional Dynamic Convolution)**:
     Replaces standard static convolutions. It computes four attention types (Spatial, Channel, Filter, and Expert) via Global Average Pooling (GAP) and channel reduction bottlenecks:
-    $$\mathbf{W}_{\text{dynamic}} = \sum_{i=1}^{N} \alpha_e^i \cdot (\mathbf{W}_i \odot \mathbf{A}_s \odot \mathbf{A}_c \odot \mathbf{A}_f)$$
+    $$
+    \mathbf{W}_{\text{dynamic}} = \sum_{i=1}^{N} \alpha_e^i \cdot (\mathbf{W}_i \odot \mathbf{A}_s \odot \mathbf{A}_c \odot \mathbf{A}_f)
+    $$
     This dynamic kernel assembly allows the network to adapt its weights for each frame, significantly improving performance under challenging lighting conditions like night glare and wet roads.
 *   **Transformer Global Feature Fusion**:
     Resolves lane occlusions and breaks in road markings. It flattens the spatial features, adds a 1D learnable Positional Embedding, and passes the tensor through an $8$-head, $2$-layer Transformer Encoder. The self-attention mechanism maps long-range global contexts, allowing the system to accurately predict lane structures even when they are partially blocked by other vehicles.
@@ -409,18 +451,20 @@ The stopping distance calculations adapt dynamically to different weather condit
 
 | Vehicle Speed (km/h) | Reaction Distance (m) | Dry Asphalt ($\mu = 0.8$) Braking (m) | Rain/Wet ($\mu = 0.4$) Braking (m) | Dry Stopping Distance (m) | Wet Stopping Distance (m) |
 |:---:|:---:|:---:|:---:|:---:|:---:|
-| **30 km/h** | $12.5\text{m}$ | $4.4\text{m}$ | $8.8\text{m}$ | **$16.9\text{m}$** | **$21.3\text{m}$** |
-| **50 km/h** | $20.8\text{m}$ | $12.3\text{m}$ | $24.6\text{m}$ | **$33.1\text{m}$** | **$45.4\text{m}$** |
-| **80 km/h** | $33.3\text{m}$ | $31.4\text{m}$ | $62.8\text{m}$ | **$64.7\text{m}$** | **$96.1\text{m}$** |
-| **100 km/h** | $41.7\text{m}$ | $49.1\text{m}$ | $98.2\text{m}$ | **$90.8\text{m}$** | **$139.9\text{m}$** |
-| **120 km/h** | $50.0\text{m}$ | $70.7\text{m}$ | $141.4\text{m}$ | **$120.7\text{m}$** | **$191.4\text{m}$** |
+| **30 km/h** | 12.5 | 4.4 | 8.8 | **16.9** | **21.3** |
+| **50 km/h** | 20.8 | 12.3 | 24.6 | **33.1** | **45.4** |
+| **80 km/h** | 33.3 | 31.4 | 62.8 | **64.7** | **96.1** |
+| **100 km/h** | 41.7 | 49.1 | 98.2 | **90.8** | **139.9** |
+| **120 km/h** | 50.0 | 70.7 | 141.4 | **120.7** | **191.4** |
 
 ---
 
 ### 7.2 Safety Scoring Matrix
-The global system safety score is initialized at $100$ and decreases based on detected collision risks and environmental hazards, reflecting the real safety index of the vehicle:
+The global system safety score is initialized at 100 and decreases based on detected collision risks and environmental hazards, reflecting the real safety index of the vehicle:
 
-$$\text{Safety Score} = 100 - \max(P_{\text{risk}}) - \text{Penalty}_{\text{rain}} - \text{Penalty}_{\text{bumpy}} - \text{Penalty}_{\text{dark}}$$
+$$
+\text{Safety Score} = 100 - \max(P_{\text{risk}}) - \text{Penalty}_{\text{rain}} - \text{Penalty}_{\text{bumpy}} - \text{Penalty}_{\text{dark}}
+$$
 
 ```
   WEATHER / ROAD CONDITIONS                      OBSTACLE THREAT SCENARIOS
