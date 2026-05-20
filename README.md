@@ -71,41 +71,41 @@ graph TD
     classDef physics fill:#ff7f0e,stroke:#B85500,color:#ffffff,stroke-width:2px;
     classDef ui fill:#9467bd,stroke:#664485,color:#ffffff,stroke-width:2px;
     
-    A["Camera Capture Thread<br>(ThreadedVideoStream)"] -->|Raw Frame Buffer<br>(Deque maxlen=3)| B["Pre-Processing Block"]
+    A["Camera Capture Thread (ThreadedVideoStream)"] -->| "Raw Frame Buffer (Deque maxlen=3)" | B["Pre-Processing Block"]
     
     subgraph "Image Conditioning"
-        B -->|Laplacian Sharpness &<br>Sky HSV Analysis| C["Weather & Light Analyzer<br>(analyze_environment)"]
-        C -->|Low Light Detected| D["Night Vision Layer<br>(LAB-CLAHE Enhancement)"]
-        C -->|Fog/Rain Detected| E["Dehaze Filter Layer<br>(Unsharp Masking + Hist Eq)"]
-        D & E & C -->|Conditioned Frame| F["Detection Framework"]
+        B -->| "Laplacian Sharpness & Sky HSV Analysis" | C["Weather & Light Analyzer (analyze_environment)"]
+        C -->| "Low Light Detected" | D["Night Vision Layer (LAB-CLAHE Enhancement)"]
+        C -->| "Fog/Rain Detected" | E["Dehaze Filter Layer (Unsharp Masking + Hist Eq)"]
+        D & E & C -->| "Conditioned Frame" | F["Detection Framework"]
     end
     
     subgraph "Perception Framework"
-        F -->|FP16 Inference| G["YOLO11x Detector"]:::dl
-        F -->|Parallel Processing| H["Lane Detector Head<br>(OTVLD-Net / Canny-Hough)"]:::dl
-        G -->|BBoxes & Scores| I["ByteTrack Tracker"]:::dl
-        I -->|Smoothed Tracks| J["Box Smoother (EMA)"]:::cv
+        F -->| "FP16 Inference" | G["YOLO11x Detector"]:::dl
+        F -->| "Parallel Processing" | H["Lane Detector Head (OTVLD-Net / Canny-Hough)"]:::dl
+        G -->| "BBoxes & Scores" | I["ByteTrack Tracker"]:::dl
+        I -->| "Smoothed Tracks" | J["Box Smoother (EMA)"]:::cv
     end
 
     subgraph "Sensing & Kinematics Engine"
-        J -->|Track ID + Box| K["Hybrid Distance Model"]:::physics
-        K -->|Monocular Depth| L["3-State Kalman Filter"]:::physics
-        L -->|Filtered Distance, Velocity, Accel| M["Safety Physics Engine"]:::physics
-        J -->|Lateral Trajectory| N["Path Intent Layer"]:::physics
-        J -->|Rear Crop Zones| O["Tail Light PPL Analyzer"]:::cv
+        J -->| "Track ID + Box" | K["Hybrid Distance Model"]:::physics
+        K -->| "Monocular Depth" | L["3-State Kalman Filter"]:::physics
+        L -->| "Filtered Distance, Velocity, Accel" | M["Safety Physics Engine"]:::physics
+        J -->| "Lateral Trajectory" | N["Path Intent Layer"]:::physics
+        J -->| "Rear Crop Zones" | O["Tail Light PPL Analyzer"]:::cv
     end
 
     subgraph "Threat Triage & Alert Gating"
-        M -->|TTC & Collision Risk| P["Forward Collision Warning"]:::physics
-        N -->|Cut-In & Crossing| Q["VRU Bubble & Cut-In Alerts"]:::physics
-        O -->|CHMSL Stop Light Status| R["Signal Triage Panel"]:::cv
-        H -->|Lane Margins| S["Lane Departure Warning"]:::physics
+        M -->| "TTC & Collision Risk" | P["Forward Collision Warning"]:::physics
+        N -->| "Cut-In & Crossing" | Q["VRU Bubble & Cut-In Alerts"]:::physics
+        O -->| "CHMSL Stop Light Status" | R["Signal Triage Panel"]:::cv
+        H -->| "Lane Margins" | S["Lane Departure Warning"]:::physics
     end
 
     subgraph "Output Assembly"
         P & Q & R & S --> T["BEV Homography Engine"]:::ui
-        T -->|BEV Plot Canvas| U["HUD Compositor"]:::ui
-        U -->|Alpha-Blended Frames| V["cv2.imshow Monitor Display"]
+        T -->| "BEV Plot Canvas" | U["HUD Compositor"]:::ui
+        U -->| "Alpha-Blended Frames" | V["cv2.imshow Monitor Display"]
     end
     
     class G,H,I dl;
@@ -139,9 +139,9 @@ Dual depth estimation processes run concurrently to calculate distance without r
 
 ```mermaid
 graph TD
-    A["Target Bounding Box Bottom Coordinate (y_bottom), Width (w_box), & Class"] --> B{"y_bottom > Horizon + 20px?"}
-    B -- "Yes (Near/Mid Range)" --> C["Apply Geometric & Optical Fusion"]
-    B -- "No (Long Range / Horizon)" --> D["Apply Pure Optical Width Model"]
+    A["Detected Object (Bounding Box bottom y-coord, width, class)"] --> B{"Below Horizon + 20px?"}
+    B -->| "Yes (Near/Mid Range)" | C["Apply Geometric & Optical Fusion"]
+    B -->| "No (Long Range / Horizon)" | D["Apply Pure Optical Width Model"]
     
     subgraph "Geometric Model"
         C --> C1["dy = y_bottom - horizon"]
@@ -210,7 +210,7 @@ graph LR
         E --> F["Update State Vector:<br>x = x + K * y"]
         F --> G["Update Error Covariance:<br>P = (I - K * H) * P"]
     end
-    G -->|Next Frame step| A
+    G -->| "Next Frame step" | A
 ```
 > [!TIP]
 > To handle mathematical edge cases, the system includes a robust try/catch fallback block. If matrix $\mathbf{S}$ becomes singular due to tracking anomalies, it automatically computes the Moore-Penrose pseudo-inverse (`np.linalg.pinv`) to prevent runtime crashes.
@@ -470,23 +470,23 @@ To ensure safe operation, the system includes a robust **Graceful Degradation** 
 graph TD
     A["System Start & Safety Initialization Checks"] --> B{"CUDA GPU Available?"}
     
-    B -- "No" --> B_CPU["Log CPU mode warning<br>Reduce inference bounds to prevent freeze"]
-    B -- "Yes" --> B_GPU["Load CUDA parameters<br>Run 3 FP16 warm-up inference passes"]
+    B -->| "No" | B_CPU["Log CPU mode warning<br>Reduce inference bounds to prevent freeze"]
+    B -->| "Yes" | B_GPU["Load CUDA parameters<br>Run 3 FP16 warm-up inference passes"]
     
     B_CPU & B_GPU --> C{"OTVLD-Net weights found?"}
     
-    C -- "No" --> C_HOUGH["Log OTVLD fallback notice<br>Silently activate Canny-Hough lane tracker"]
-    C -- "Yes" --> C_OTVLD["Load model state dict<br>Initialize Transformer & ODConv heads"]
+    C -->| "No" | C_HOUGH["Log OTVLD fallback notice<br>Silently activate Canny-Hough lane tracker"]
+    C -->| "Yes" | C_OTVLD["Load model state dict<br>Initialize Transformer & ODConv heads"]
     
     C_HOUGH & C_OTVLD --> D{"Kalman Filter S-Matrix singular?"}
     
-    D -- "Yes" --> D_PINV["Catch singular LinAlgError<br>Perform Moore-Penrose pseudo-inverse (pinv)"]
-    D -- "No" --> D_OK["Perform normal update step using inv(S)"]
+    D -->| "Yes" | D_PINV["Catch singular LinAlgError<br>Perform Moore-Penrose pseudo-inverse (pinv)"]
+    D -->| "No" | D_OK["Perform normal update step using inv(S)"]
     
     D_PINV & D_OK --> E{"Track lost for > 2.0s?"}
     
-    E -- "Yes" --> E_CLEAN["Run memory cleanup:<br>Delete expired IDs & deques to prevent memory leaks"]
-    E -- "No" --> E_KEEP["Retain active track history"]
+    E -->| "Yes" | E_CLEAN["Run memory cleanup:<br>Delete expired IDs & deques to prevent memory leaks"]
+    E -->| "No" | E_KEEP["Retain active track history"]
 ```
 
 1.  **Memory Leak Prevention (`clean_memory`)**:
