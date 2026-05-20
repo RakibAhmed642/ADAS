@@ -334,7 +334,7 @@ To create an accurate top-down spatial map, the system maps camera coordinates t
     ```
     Where:
     ```math
-    \mathbf{H}_{\text{bev}} = \operatorname{getPerspectiveTransform}(\text{src\_pts}, \text{dst\_pts})
+    \mathbf{H}_{\text{bev}} = \text{getPerspectiveTransform}(\text{src\_pts}, \text{dst\_pts})
     ```
 2.  **Obstacle Blip Placement**:
     For any tracked object with central base coordinate `(x_c, y_2)`:
@@ -342,11 +342,11 @@ To create an accurate top-down spatial map, the system maps camera coordinates t
     \begin{bmatrix} x'_d \\ y'_d \\ w'_d \end{bmatrix} = \mathbf{H}_{\text{bev}} \cdot \begin{bmatrix} x_c \\ y_2 \\ 1 \end{bmatrix}
     ```
     ```math
-    \operatorname{X}_{\text{bev}} = \frac{x'_d}{w'_d}
+    X_{\text{bev}} = \frac{x'_d}{w'_d}
     ```
     To maintain accurate longitudinal scaling over long distances, the system overrides the homographic Y coordinate with its highly stable Kalman-filtered physical distance:
     ```math
-    \operatorname{Y}_{\text{bev}} = \operatorname{Y}_{\text{origin}} - (d_{\text{Kalman}} \cdot \text{scale})
+    Y_{\text{bev}} = Y_{\text{origin}} - (d_{\text{Kalman}} \cdot \text{scale})
     ```
     Where `scale = Y_origin / 100`, allowing accurate top-down spatial tracking up to 100 meters.
 
